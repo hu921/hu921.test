@@ -1,40 +1,58 @@
-name: Publish to GH Pages
+name: Deploy pages on push
+
+# When the action should run. Here we specify it should run on push to main branch.
+# We also allow for manually running the action with the empty "workflow_dispatch".
 on:
   push:
     branches:
-      - master
-  pull_request:
+      - main
+
+  workflow_dispatch:
+
+# Set the needed permissions
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Cancel running deployments if a new one is issued.
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Checkout destination
-        uses: actions/checkout@v3
-        if: github.ref == 'refs/heads/master'
-        with:
-          ref: gh-pages
-          path: built-site
 
       - name: Setup Hugo
-        run: |
-          curl -L -o /tmp/hugo.tar.gz 'https://github.com/gohugoio/hugo/releases/download/v0.110.0/hugo_extended_0.110.0_linux-amd64.tar.gz'
-          tar -C ${RUNNER_TEMP} -zxvf /tmp/hugo.tar.gz hugo          
-      - name: Build
-        run: ${RUNNER_TEMP}/hugo
+        uses: peaceiris/actions-hugo@v2
+        with:
+          hugo-version: "latest"
+          extended: true
 
-      - name: Deploy
-        if: github.ref == 'refs/heads/master'
-        run: |
-          cp -R public/* ${GITHUB_WORKSPACE}/built-site/
-          cd ${GITHUB_WORKSPACE}/built-site
-          git add .
-          git config user.name 'hu921'
-          git config user.email 'husara@gmail.com'
-          git commit -m 'Updated site'
-          git push      
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v3
+
+      - name: Build
+        run: hugo --baseURL "${{ steps.pages.outputs.base_url }}/"
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: ./public
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
+
